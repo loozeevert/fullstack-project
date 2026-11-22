@@ -1,74 +1,185 @@
-import React, { useState } from 'react';
-import { Table, Button, Tag, Modal, Form, Input, DatePicker, InputNumber, message } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
-import { mockTrips } from '../mock/mockData';
+import React, { useEffect, useState } from 'react';
+import {
+  Table,
+  Button,
+  Tag,
+  Space,
+  Spin,
+  Alert,
+  Empty,
+  Card,
+  Segmented,
+  message,
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { mockTrips } from '../entities/trip/mockData';
+import type { Trip, TripStatus } from '../entities/trip/types';
+import { CreateTripModal } from '../features/create-trip/CreateTripModal';
+
+type TripsViewState = 'normal' | 'loading' | 'empty' | 'error';
+
+const statusColorMap: Record<TripStatus, string> = {
+  DRAFT: 'default',
+  PENDING: 'gold',
+  APPROVED: 'green',
+  REJECTED: 'red',
+  COMPLETED: 'blue',
+};
 
 export const TripsPage: React.FC = () => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form] = Form.useForm();
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [viewState, setViewState] = useState<TripsViewState>('loading');
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
-  const columns = [
+  const loadTrips = (targetState: TripsViewState = 'normal') => {
+    setViewState('loading');
+    setTimeout(() => {
+      if (targetState === 'error') {
+        setViewState('error');
+        return;
+      }
+      if (targetState === 'empty') {
+        setTrips([]);
+        setViewState('empty');
+        return;
+      }
+      setTrips(mockTrips);
+      setViewState('normal');
+    }, 400);
+  };
+
+  useEffect(() => {
+    loadTrips('normal');
+  }, []);
+
+  const handleCreateTrip = (newTrip: Trip) => {
+    setTrips((prev) => [newTrip, ...prev]);
+    if (viewState === 'empty') {
+      setViewState('normal');
+    }
+    setIsModalOpen(false);
+    message.success(`Заявка ${newTrip.id} на командировку добавлена!`);
+  };
+
+  const columns: ColumnsType<Trip> = [
     { title: 'ID', dataIndex: 'id', key: 'id' },
     { title: 'Город назначения', dataIndex: 'destination', key: 'destination' },
     { title: 'Цель командировки', dataIndex: 'title', key: 'title' },
-    { title: 'Даты', key: 'dates', render: (_: any, r: any) => `${r.startDate} — ${r.endDate}` },
-    { 
-      title: 'Запрошенный аванс', 
-      dataIndex: 'advanceAmount', 
-      key: 'advanceAmount', 
-      render: (v: number) => `${v.toLocaleString()} ₽` 
+    {
+      title: 'Даты',
+      key: 'dates',
+      render: (_: unknown, record: Trip) => `${record.startDate} — ${record.endDate}`,
+    },
+    {
+      title: 'Запрошенный аванс',
+      dataIndex: 'advanceAmount',
+      key: 'advanceAmount',
+      render: (value: number) => `${value.toLocaleString()} ₽`,
     },
     {
       title: 'Статус',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => {
-        const color = status === 'APPROVED' ? 'green' : status === 'PENDING' ? 'gold' : 'blue';
-        return <Tag color={color}>{status}</Tag>;
-      }
-    }
+      render: (status: TripStatus) => (
+        <Tag color={statusColorMap[status] ?? 'blue'}>{status}</Tag>
+      ),
+    },
   ];
 
-  const handleCreate = () => {
-    message.success('Заявка на командировку успешно создана!');
-    setIsModalOpen(false);
-    form.resetFields();
-  };
-
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2>Реестр командировок</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>
-          Оформить заявку
-        </Button>
+    <div style={{ animation: 'tripsFadeIn 0.35s ease' }}>
+      <style>{`
+        @keyframes tripsFadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
+        <h2 style={{ margin: 0 }}>Реестр командировок</h2>
+        <Space wrap>
+          <Segmented<TripsViewState>
+            value={viewState}
+            onChange={(value) => {
+              if (value === 'loading') {
+                setViewState('loading');
+              } else {
+                loadTrips(value);
+              }
+            }}
+            options={[
+              { label: 'Список', value: 'normal' },
+              { label: 'Загрузка', value: 'loading' },
+              { label: 'Пусто', value: 'empty' },
+              { label: 'Ошибка', value: 'error' },
+            ]}
+          />
+          <Button icon={<ReloadOutlined />} onClick={() => loadTrips('normal')}>
+            Обновить
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setIsModalOpen(true)}
+          >
+            Оформить заявку
+          </Button>
+        </Space>
       </div>
 
-      <Table dataSource={mockTrips} columns={columns} rowKey="id" />
+      {viewState === 'loading' && (
+        <Card style={{ textAlign: 'center', padding: 32 }}>
+          <Spin size="large" />
+          <div style={{ marginTop: 12 }}>Загрузка реестра командировок...</div>
+        </Card>
+      )}
 
-      <Modal
-        title="Новая заявка на командировку"
+      {viewState === 'error' && (
+        <Alert
+          type="error"
+          showIcon
+          message="Ошибка при загрузке реестра командировок"
+          description="Не удалось получить список заявок. Попробуйте обновить данные."
+          action={
+            <Button size="small" danger onClick={() => loadTrips('normal')}>
+              Повторить
+            </Button>
+          }
+        />
+      )}
+
+      {viewState === 'empty' && (
+        <Card>
+          <Empty description="Список командировок пока пуст">
+            <Space>
+              <Button type="primary" onClick={() => setIsModalOpen(true)}>
+                Оформить первую заявку
+              </Button>
+              <Button onClick={() => loadTrips('normal')}>Загрузить демо-данные</Button>
+            </Space>
+          </Empty>
+        </Card>
+      )}
+
+      {viewState === 'normal' && (
+        <Table dataSource={trips} columns={columns} rowKey="id" />
+      )}
+
+      <CreateTripModal
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
-        onOk={() => form.submit()}
-        okText="Отправить на согласование"
-        cancelText="Отмена"
-      >
-        <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="destination" label="Город / Локация" rules={[{ required: true, message: 'Укажите город' }]}>
-            <Input placeholder="Например, Екатеринбург" />
-          </Form.Item>
-          <Form.Item name="title" label="Цель поездки" rules={[{ required: true, message: 'Укажите цель поездки' }]}>
-            <Input placeholder="Монтаж оборудования" />
-          </Form.Item>
-          <Form.Item name="dates" label="Период командировки" rules={[{ required: true, message: 'Выберите даты' }]}>
-            <DatePicker.RangePicker style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="advanceAmount" label="Сумма аванса (руб.)" rules={[{ required: true, message: 'Укажите сумму' }]}>
-            <InputNumber style={{ width: '100%' }} min={0} />
-          </Form.Item>
-        </Form>
-      </Modal>
+        onCreate={handleCreateTrip}
+      />
     </div>
   );
 };
